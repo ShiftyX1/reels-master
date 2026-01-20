@@ -193,3 +193,17 @@
 .reels-master-download:hover::after {
   opacity: 1;
 }
+
+/* Spinner animation for download */
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.reels-master-spinner {
+  animation: spin 1s linear infinite;
+}

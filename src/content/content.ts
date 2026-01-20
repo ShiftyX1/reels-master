@@ -2,31 +2,21 @@ import './content.css';
 
 console.log('Reels Master: Content script loaded');
 
-interface ReelsControls {
-  volumeSlider: HTMLInputElement | null;
-  downloadButton: HTMLButtonElement | null;
-  container: HTMLDivElement | null;
-}
-
 class ReelsMaster {
-  private currentVideo: HTMLVideoElement | null = null;
-  private controls: ReelsControls = {
-    volumeSlider: null,
-    downloadButton: null,
-    container: null
-  };
-  private observer: MutationObserver | null = null;
   private storedVolume: number = 0.5;
   private storedMuted: boolean = false;
-  private videoVolumeListeners: WeakMap<HTMLVideoElement, () => void> = new WeakMap();
+  private processedContainers: WeakSet<HTMLElement> = new WeakSet();
+  private videoVolumeListeners: WeakMap<HTMLVideoElement, boolean> = new WeakMap();
+  private domObserver: MutationObserver | null = null;
 
   constructor() {
     this.init();
   }
 
   private init(): void {
-    // Сразу начинаем следить за всеми видео для мгновенного применения громкости
-    this.setupGlobalVideoInterceptor();
+    this.loadSettings();
+    
+    this.setupVideoInterceptor();
     
     if (document.readyState === 'loading') {
       document.addEventListener('DOMContentLoaded', () => this.start());
@@ -35,25 +25,47 @@ class ReelsMaster {
     }
   }
 
-  // Перехватываем все видео сразу при их появлении и применяем сохраненную громкость
-  private setupGlobalVideoInterceptor(): void {
-    // Применяем к уже существующим видео
+  private loadSettings(): void {
+    if (typeof chrome !== 'undefined' && chrome.storage?.local) {
+      chrome.storage.local.get(['volume', 'muted'], (result) => {
+        if (result.volume !== undefined) {
+          this.storedVolume = result.volume;
+        }
+        if (result.muted !== undefined) {
+          this.storedMuted = result.muted;
+        }
+        this.applyVolumeToAllVideos();
+        this.updateAllSliders();
+      });
+    }
+  }
+
+  private saveSettings(): void {
+    if (typeof chrome !== 'undefined' && chrome.storage?.local) {
+      chrome.storage.local.set({
+        volume: this.storedVolume,
+        muted: this.storedMuted
+      });
+    }
+  }
+
+  private start(): void {
+    console.log('Reels Master: Starting...');
+    this.injectControlsToAllContainers();
+    this.setupDOMObserver();
+  }
+
+  private setupVideoInterceptor(): void {
     this.applyVolumeToAllVideos();
 
-    // Следим за новыми видео через MutationObserver
     const videoObserver = new MutationObserver((mutations) => {
-      let hasNewVideo = false;
       for (const mutation of mutations) {
         for (const node of mutation.addedNodes) {
           if (node instanceof HTMLVideoElement) {
-            hasNewVideo = true;
             this.applyVolumeToVideo(node);
           } else if (node instanceof HTMLElement) {
             const videos = node.querySelectorAll('video');
-            if (videos.length > 0) {
-              hasNewVideo = true;
-              videos.forEach(video => this.applyVolumeToVideo(video));
-            }
+            videos.forEach(video => this.applyVolumeToVideo(video));
           }
         }
       }
@@ -66,6 +78,8 @@ class ReelsMaster {
   }
 
   private applyVolumeToAllVideos(): void {
+    if (!window.location.pathname.includes('/reels/')) return;
+    
     document.querySelectorAll('video').forEach(video => {
       this.applyVolumeToVideo(video);
     });
@@ -74,200 +88,133 @@ class ReelsMaster {
   private applyVolumeToVideo(video: HTMLVideoElement): void {
     if (!window.location.pathname.includes('/reels/')) return;
     
-    // Применяем сохраненную громкость
     video.volume = this.storedVolume;
     video.muted = this.storedMuted;
 
-    // Добавляем слушатель на случай если Instagram перезапишет громкость
     if (!this.videoVolumeListeners.has(video)) {
-      const listener = () => {
-        // Если громкость изменилась не нами, восстанавливаем
-        if (Math.abs(video.volume - this.storedVolume) > 0.01 || video.muted !== this.storedMuted) {
+      this.videoVolumeListeners.set(video, true);
+      
+      let changeCount = 0;
+      const maxChanges = 10;
+      
+      const enforceVolume = () => {
+        changeCount++;
+        if (changeCount <= maxChanges) {
           video.volume = this.storedVolume;
           video.muted = this.storedMuted;
         }
       };
-      
-      // Слушаем первые несколько изменений громкости для борьбы с Instagram
-      let volumeChangeCount = 0;
-      const tempListener = () => {
-        volumeChangeCount++;
-        if (volumeChangeCount <= 5) {
-          video.volume = this.storedVolume;
-          video.muted = this.storedMuted;
-        } else {
-          video.removeEventListener('volumechange', tempListener);
-        }
-      };
-      
-      video.addEventListener('volumechange', tempListener);
-      video.addEventListener('loadedmetadata', listener);
-      video.addEventListener('play', listener);
-      this.videoVolumeListeners.set(video, listener);
+
+      video.addEventListener('volumechange', enforceVolume);
+      video.addEventListener('loadedmetadata', enforceVolume);
+      video.addEventListener('play', enforceVolume);
+      video.addEventListener('canplay', enforceVolume);
     }
   }
 
-  private start(): void {
-    console.log('Reels Master: Starting...');
-    this.checkForReels();
-    this.observeUrlChanges();
-    this.observeDOMChanges();
-    window.addEventListener('scroll', () => {
-      this.checkForReels();
-    }, { passive: true });
-  }
-
-  private observeUrlChanges(): void {
-    let lastUrl = location.href;
-    new MutationObserver(() => {
-      const currentUrl = location.href;
-      if (currentUrl !== lastUrl) {
-        lastUrl = currentUrl;
-        console.log('Reels Master: URL changed to', currentUrl);
-        // Сразу применяем громкость ко всем видео
-        this.applyVolumeToAllVideos();
-        setTimeout(() => this.checkForReels(), 300);
+  private setupDOMObserver(): void {
+    this.domObserver = new MutationObserver((mutations) => {
+      if (!window.location.pathname.includes('/reels/')) return;
+      
+      let shouldCheck = false;
+      
+      for (const mutation of mutations) {
+        for (const node of mutation.addedNodes) {
+          if (node instanceof HTMLElement) {
+            if (node.querySelector('video') || node.querySelector('svg[aria-label="Like"]')) {
+              shouldCheck = true;
+              break;
+            }
+          }
+        }
+        if (shouldCheck) break;
       }
-    }).observe(document.querySelector('body')!, { 
-      subtree: true, 
-      childList: true 
-    });
-  }
-
-  private observeDOMChanges(): void {
-    this.observer = new MutationObserver(() => {
-      this.checkForReels();
+      
+      if (shouldCheck) {
+        requestAnimationFrame(() => {
+          this.injectControlsToAllContainers();
+        });
+      }
     });
 
-    this.observer.observe(document.body, {
+    this.domObserver.observe(document.body, {
       childList: true,
       subtree: true
     });
   }
 
-  private checkForReels(): void {
-    if (!window.location.pathname.includes('/reels/')) {
-      this.cleanup();
-      return;
-    }
+  private injectControlsToAllContainers(): void {
+    if (!window.location.pathname.includes('/reels/')) return;
 
-    const video = this.getActiveVideo();
-    if (!video || video === this.currentVideo) {
-      return;
-    }
+    const actionContainers = this.findAllActionContainers();
+    
+    console.log(`Reels Master: Found ${actionContainers.length} action containers`);
 
-    console.log('Reels Master: Found new video element');
-    this.currentVideo = video;
-    
-    // Убедимся что громкость применена к текущему видео
-    this.applyVolumeToVideo(video);
-    
-    this.injectControls();
+    for (const container of actionContainers) {
+      this.injectControlsToContainer(container);
+    }
   }
 
-  private getActiveVideo(): HTMLVideoElement | null {
-    const videos = Array.from(document.querySelectorAll('video'));
-    if (videos.length === 0) return null;
-
-    const center = window.innerHeight / 2;
-    let closestVideo: HTMLVideoElement | null = null;
-    let minDistance = Infinity;
-
-    for (const video of videos) {
-      const rect = video.getBoundingClientRect();
-      if (rect.height === 0) continue;
-
-      const videoCenter = rect.top + (rect.height / 2);
-      const distance = Math.abs(center - videoCenter);
-
-      if (distance < minDistance) {
-        minDistance = distance;
-        closestVideo = video;
+  private findAllActionContainers(): HTMLElement[] {
+    const containers: HTMLElement[] = [];
+    
+    const likeButtons = document.querySelectorAll('svg[aria-label="Like"]');
+    
+    for (const likeButton of likeButtons) {
+      const container = this.findActionContainerFromLikeButton(likeButton);
+      if (container && !containers.includes(container)) {
+        containers.push(container);
       }
     }
-
-    return closestVideo;
-  }
-
-  private injectControls(): void {
-    if (!this.currentVideo) return;
-
-    // Ищем контейнер кнопок рядом с ТЕКУЩИМ видео, а не глобально
-    const actionButtons = this.findActionButtonsContainer(this.currentVideo);
-    if (!actionButtons) {
-      console.log('Reels Master: Action buttons container not found');
-      setTimeout(() => this.injectControls(), 500);
-      return;
-    }
-
-    // Проверяем, есть ли уже наши контролы в этом контейнере
-    const existingControls = actionButtons.querySelector('.reels-master-controls');
-    if (existingControls) {
-      console.log('Reels Master: Controls already exist in this container');
-      return;
-    }
-
-    // Удаляем старые контролы из предыдущего контейнера
-    if (this.controls.container && this.controls.container.parentElement !== actionButtons) {
-      this.controls.container.remove();
-    }
-
-    this.controls.container = this.createControlsContainer();
-    this.controls.volumeSlider = this.createVolumeSlider();
-    this.controls.downloadButton = this.createDownloadButton();
-    this.controls.container.appendChild(this.createVolumeControl());
-    this.controls.container.appendChild(this.controls.downloadButton);
-    actionButtons.insertBefore(this.controls.container, actionButtons.firstChild);
-
-    // Синхронизируем слайдер с текущей громкостью
-    if (this.controls.volumeSlider) {
-      this.controls.volumeSlider.value = String(this.storedVolume * 100);
-    }
-
-    console.log('Reels Master: Controls injected');
-  }
-
-  // Ищем контейнер кнопок относительно конкретного видео
-  private findActionButtonsContainer(video: HTMLVideoElement): HTMLElement | null {
-    // Ищем родительский контейнер рила для данного видео
-    let reelContainer = video.closest('article') || video.closest('[role="presentation"]');
     
-    if (!reelContainer) {
-      // Пробуем найти родителя вверх по дереву
-      let parent = video.parentElement;
-      for (let i = 0; i < 10 && parent; i++) {
-        if (parent.querySelector('svg[aria-label="Like"]')) {
-          reelContainer = parent;
-          break;
+    return containers;
+  }
+
+  private findActionContainerFromLikeButton(likeButton: Element): HTMLElement | null {
+    let parent = likeButton.parentElement;
+    
+    while (parent) {
+      const hasLike = parent.querySelector('svg[aria-label="Like"]');
+      const hasComment = parent.querySelector('svg[aria-label="Comment"]');
+      const hasShare = parent.querySelector('svg[aria-label="Share"]');
+      const hasSave = parent.querySelector('svg[aria-label="Save"]');
+      
+      if (hasLike && hasComment && hasShare && hasSave) {
+        const children = parent.children;
+        if (children.length >= 4) {
+          return parent as HTMLElement;
         }
-        parent = parent.parentElement;
       }
+      
+      parent = parent.parentElement;
+      
+      if (parent === document.body) break;
     }
-
-    if (!reelContainer) {
-      reelContainer = document.body;
-    }
-
-    // Ищем кнопку лайка внутри контейнера текущего рила
-    const likeButton = reelContainer.querySelector('svg[aria-label="Like"]');
-    if (likeButton) {
-      let parent = likeButton.parentElement;
-      while (parent && parent !== reelContainer) {
-        const childDivs = parent.querySelectorAll(':scope > div');
-        if (childDivs.length >= 3) {
-          const hasLike = parent.querySelector('svg[aria-label="Like"]');
-          const hasComment = parent.querySelector('svg[aria-label="Comment"]');
-          const hasShare = parent.querySelector('svg[aria-label="Share"]');
-          
-          if (hasLike && hasComment && hasShare) {
-            return parent as HTMLElement;
-          }
-        }
-        parent = parent.parentElement;
-      }
-    }
-
+    
     return null;
+  }
+
+  private injectControlsToContainer(container: HTMLElement): void {
+    if (this.processedContainers.has(container)) {
+      return;
+    }
+
+    if (container.querySelector('.reels-master-controls')) {
+      this.processedContainers.add(container);
+      return;
+    }
+
+    const controlsContainer = this.createControlsContainer();
+    const volumeControl = this.createVolumeControl();
+    const downloadButton = this.createDownloadButton(container);
+    
+    controlsContainer.appendChild(volumeControl);
+    controlsContainer.appendChild(downloadButton);
+    
+    container.insertBefore(controlsContainer, container.firstChild);
+    
+    this.processedContainers.add(container);
+    console.log('Reels Master: Controls injected to container');
   }
 
   private createControlsContainer(): HTMLDivElement {
@@ -280,32 +227,23 @@ class ReelsMaster {
     const volumeControl = document.createElement('div');
     volumeControl.className = 'reels-master-volume';
 
-    const volumeButton = document.createElement('button');
-    volumeButton.className = 'reels-master-volume-button';
-    volumeButton.innerHTML = `
-      <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
-        <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/>
-      </svg>
-    `;
-
     const sliderContainer = document.createElement('div');
     sliderContainer.className = 'reels-master-slider-container';
     
-    this.controls.volumeSlider = this.createVolumeSlider();
-    sliderContainer.appendChild(this.controls.volumeSlider);
-    
-    volumeButton.onclick = () => {
-      if (this.currentVideo) {
-        this.storedMuted = !this.storedMuted;
-        
-        // Применяем ко всем видео
-        this.applyVolumeToAllVideos();
+    const slider = this.createVolumeSlider();
+    sliderContainer.appendChild(slider);
 
-        if (this.controls.volumeSlider) {
-          this.controls.volumeSlider.value = this.storedMuted ? '0' : String(this.storedVolume * 100);
-        }
-        this.updateVolumeIcon(volumeButton);
-      }
+    const volumeButton = document.createElement('button');
+    volumeButton.className = 'reels-master-volume-button';
+    this.updateVolumeIcon(volumeButton);
+
+    volumeButton.onclick = () => {
+      this.storedMuted = !this.storedMuted;
+        
+      this.saveSettings();
+      this.applyVolumeToAllVideos();
+      this.updateAllSliders();
+      this.updateAllVolumeIcons();
     };
 
     volumeControl.appendChild(sliderContainer);
@@ -319,34 +257,37 @@ class ReelsMaster {
     slider.type = 'range';
     slider.min = '0';
     slider.max = '100';
-    
-    // Используем сохраненную громкость
-    slider.value = String(this.storedVolume * 100);
-    
+    slider.value = this.storedMuted ? '0' : String(this.storedVolume * 100);
     slider.className = 'reels-master-volume-slider';
 
     slider.oninput = (e) => {
-      if (this.currentVideo) {
-        const value = parseInt((e.target as HTMLInputElement).value);
-        const newVolume = value / 100;
-        const newMuted = value === 0;
-        
-        // Сохраняем настройки
-        this.storedVolume = newVolume;
-        this.storedMuted = newMuted;
-        
-        // Применяем ко всем видео сразу
-        this.applyVolumeToAllVideos();
-        
-        const volumeControl = slider.closest('.reels-master-volume');
-        const volumeButton = volumeControl?.querySelector('.reels-master-volume-button') as HTMLButtonElement;
-        if (volumeButton) {
-          this.updateVolumeIcon(volumeButton);
-        }
-      }
+      const value = parseInt((e.target as HTMLInputElement).value);
+      this.storedVolume = value / 100;
+      this.storedMuted = value === 0;
+      
+      this.saveSettings();
+      this.applyVolumeToAllVideos();
+      this.updateAllSliders();
+      this.updateAllVolumeIcons();
     };
 
     return slider;
+  }
+
+  private updateAllSliders(): void {
+    const sliders = document.querySelectorAll('.reels-master-volume-slider') as NodeListOf<HTMLInputElement>;
+    const value = this.storedMuted ? '0' : String(this.storedVolume * 100);
+    
+    sliders.forEach(slider => {
+      slider.value = value;
+    });
+  }
+
+  private updateAllVolumeIcons(): void {
+    const buttons = document.querySelectorAll('.reels-master-volume-button') as NodeListOf<HTMLButtonElement>;
+    buttons.forEach(button => {
+      this.updateVolumeIcon(button);
+    });
   }
 
   private updateVolumeIcon(button: HTMLButtonElement): void {
@@ -370,7 +311,7 @@ class ReelsMaster {
     button.innerHTML = icon;
   }
 
-  private createDownloadButton(): HTMLButtonElement {
+  private createDownloadButton(actionContainer: HTMLElement): HTMLButtonElement {
     const button = document.createElement('button');
     button.className = 'reels-master-download';
     button.innerHTML = `
@@ -380,77 +321,104 @@ class ReelsMaster {
     `;
     button.title = 'Download Reel';
     
-    button.onclick = () => this.downloadReel();
+    button.onclick = () => this.downloadReel(actionContainer, button);
 
     return button;
   }
 
-  private async downloadReel(): Promise<void> {
-    if (!this.currentVideo) {
-      console.error('Reels Master: No video found');
+  private findVideoForContainer(actionContainer: HTMLElement): HTMLVideoElement | null {
+    let parent = actionContainer.parentElement;
+    
+    while (parent) {
+      const video = parent.querySelector('video');
+      if (video) {
+        return video;
+      }
+      parent = parent.parentElement;
+      
+      if (parent === document.body) break;
+    }
+    
+    return this.getClosestVideoToElement(actionContainer);
+  }
+
+  private getClosestVideoToElement(element: HTMLElement): HTMLVideoElement | null {
+    const elementRect = element.getBoundingClientRect();
+    const elementCenterY = elementRect.top + elementRect.height / 2;
+    
+    const videos = Array.from(document.querySelectorAll('video'));
+    let closestVideo: HTMLVideoElement | null = null;
+    let minDistance = Infinity;
+
+    for (const video of videos) {
+      const rect = video.getBoundingClientRect();
+      if (rect.height === 0) continue;
+
+      const videoCenter = rect.top + rect.height / 2;
+      const distance = Math.abs(elementCenterY - videoCenter);
+
+      if (distance < minDistance) {
+        minDistance = distance;
+        closestVideo = video;
+      }
+    }
+
+    return closestVideo;
+  }
+
+  private async downloadReel(actionContainer: HTMLElement, button: HTMLButtonElement): Promise<void> {
+    const reelUrl = window.location.href;
+    
+    if (!reelUrl.includes('/reels/')) {
+      alert('Unable to detect reel URL');
       return;
     }
 
     try {
-      const videoUrl = this.currentVideo.src;
-      
-      if (!videoUrl) {
-        alert('Unable to find video URL');
-        return;
+      button.innerHTML = `
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" class="reels-master-spinner">
+          <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8z" opacity="0.3"/>
+          <path d="M12 2v4c4.42 0 8 3.58 8 8h4c0-6.63-5.37-12-12-12z"/>
+        </svg>
+      `;
+
+      console.log('Reels Master: Sending download request to background for', reelUrl);
+
+      const response = await chrome.runtime.sendMessage({
+        type: 'DOWNLOAD_REEL',
+        url: reelUrl
+      });
+
+      console.log('Reels Master: Background response', response);
+
+      if (!response.success) {
+        throw new Error(response.error || 'Download failed');
       }
 
-      if (this.controls.downloadButton) {
-        this.controls.downloadButton.innerHTML = `
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
-          </svg>
-        `;
-      }
-
-      const response = await fetch(videoUrl);
-      const blob = await response.blob();
-      const url = URL.createObjectURL(blob);
-      
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `reel_${Date.now()}.mp4`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
+      button.innerHTML = `
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+        </svg>
+      `;
 
       setTimeout(() => {
-        if (this.controls.downloadButton) {
-          this.controls.downloadButton.innerHTML = `
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/>
-            </svg>
-          `;
-        }
-      }, 2000);
-
-    } catch (error) {
-      console.error('Reels Master: Download failed', error);
-      alert('Failed to download video. Please try again.');
-      
-      if (this.controls.downloadButton) {
-        this.controls.downloadButton.innerHTML = `
+        button.innerHTML = `
           <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
             <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/>
           </svg>
         `;
-      }
-    }
-  }
+      }, 2000);
 
-  private cleanup(): void {
-    if (this.controls.container) {
-      this.controls.container.remove();
-      this.controls.container = null;
-      this.controls.volumeSlider = null;
-      this.controls.downloadButton = null;
+    } catch (error) {
+      console.error('Reels Master: Download failed', error);
+      alert('Failed to download video: ' + (error instanceof Error ? error.message : 'Unknown error'));
+      
+      button.innerHTML = `
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/>
+        </svg>
+      `;
     }
-    this.currentVideo = null;
   }
 }
 
