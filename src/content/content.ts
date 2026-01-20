@@ -155,10 +155,50 @@ class ReelsMaster {
     }
   }
 
+  private readonly LIKE_SELECTORS = [
+    'svg[aria-label="Like"]',
+    'svg[aria-label="Нравится"]',
+    'svg[aria-label="Me gusta"]',
+    'svg[aria-label="J\'aime"]',
+    'svg[aria-label="Gefällt mir"]',
+    'svg[aria-label="いいね！"]',
+    'svg[aria-label="赞"]',
+  ].join(',');
+
+  private readonly COMMENT_SELECTORS = [
+    'svg[aria-label="Comment"]',
+    'svg[aria-label="Комментировать"]',
+    'svg[aria-label="Comentar"]',
+    'svg[aria-label="Commenter"]',
+    'svg[aria-label="Kommentieren"]',
+    'svg[aria-label="コメントする"]',
+    'svg[aria-label="评论"]',
+  ].join(',');
+
+  private readonly SHARE_SELECTORS = [
+    'svg[aria-label="Share"]',
+    'svg[aria-label="Поделиться"]',
+    'svg[aria-label="Сделать репост"]',
+    'svg[aria-label="Compartir"]',
+    'svg[aria-label="Partager"]',
+    'svg[aria-label="Teilen"]',
+    'svg[aria-label="シェア"]',
+    'svg[aria-label="分享"]',
+  ].join(',');
+
+  private readonly SAVE_SELECTORS = [
+    'svg[aria-label="Save"]',
+    'svg[aria-label="Сохранить"]',
+    'svg[aria-label="Guardar"]',
+    'svg[aria-label="Enregistrer"]',
+    'svg[aria-label="Speichern"]',
+    'svg[aria-label="保存"]',
+  ].join(',');
+    
   private findAllActionContainers(): HTMLElement[] {
     const containers: HTMLElement[] = [];
     
-    const likeButtons = document.querySelectorAll('svg[aria-label="Like"]');
+    const likeButtons = document.querySelectorAll(this.LIKE_SELECTORS);
     
     for (const likeButton of likeButtons) {
       const container = this.findActionContainerFromLikeButton(likeButton);
@@ -174,10 +214,10 @@ class ReelsMaster {
     let parent = likeButton.parentElement;
     
     while (parent) {
-      const hasLike = parent.querySelector('svg[aria-label="Like"]');
-      const hasComment = parent.querySelector('svg[aria-label="Comment"]');
-      const hasShare = parent.querySelector('svg[aria-label="Share"]');
-      const hasSave = parent.querySelector('svg[aria-label="Save"]');
+      const hasLike = parent.querySelector(this.LIKE_SELECTORS);
+      const hasComment = parent.querySelector(this.COMMENT_SELECTORS);
+      const hasShare = parent.querySelector(this.SHARE_SELECTORS);
+      const hasSave = parent.querySelector(this.SAVE_SELECTORS);
       
       if (hasLike && hasComment && hasShare && hasSave) {
         const children = parent.children;
