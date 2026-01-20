@@ -16,18 +16,94 @@ class ReelsMaster {
     container: null
   };
   private observer: MutationObserver | null = null;
-  private storedVolume: number | null = null;
+  private storedVolume: number = 0.5;
   private storedMuted: boolean = false;
+  private videoVolumeListeners: WeakMap<HTMLVideoElement, () => void> = new WeakMap();
 
   constructor() {
     this.init();
   }
 
   private init(): void {
+    // Сразу начинаем следить за всеми видео для мгновенного применения громкости
+    this.setupGlobalVideoInterceptor();
+    
     if (document.readyState === 'loading') {
       document.addEventListener('DOMContentLoaded', () => this.start());
     } else {
       this.start();
+    }
+  }
+
+  // Перехватываем все видео сразу при их появлении и применяем сохраненную громкость
+  private setupGlobalVideoInterceptor(): void {
+    // Применяем к уже существующим видео
+    this.applyVolumeToAllVideos();
+
+    // Следим за новыми видео через MutationObserver
+    const videoObserver = new MutationObserver((mutations) => {
+      let hasNewVideo = false;
+      for (const mutation of mutations) {
+        for (const node of mutation.addedNodes) {
+          if (node instanceof HTMLVideoElement) {
+            hasNewVideo = true;
+            this.applyVolumeToVideo(node);
+          } else if (node instanceof HTMLElement) {
+            const videos = node.querySelectorAll('video');
+            if (videos.length > 0) {
+              hasNewVideo = true;
+              videos.forEach(video => this.applyVolumeToVideo(video));
+            }
+          }
+        }
+      }
+    });
+
+    videoObserver.observe(document.documentElement, {
+      childList: true,
+      subtree: true
+    });
+  }
+
+  private applyVolumeToAllVideos(): void {
+    document.querySelectorAll('video').forEach(video => {
+      this.applyVolumeToVideo(video);
+    });
+  }
+
+  private applyVolumeToVideo(video: HTMLVideoElement): void {
+    if (!window.location.pathname.includes('/reels/')) return;
+    
+    // Применяем сохраненную громкость
+    video.volume = this.storedVolume;
+    video.muted = this.storedMuted;
+
+    // Добавляем слушатель на случай если Instagram перезапишет громкость
+    if (!this.videoVolumeListeners.has(video)) {
+      const listener = () => {
+        // Если громкость изменилась не нами, восстанавливаем
+        if (Math.abs(video.volume - this.storedVolume) > 0.01 || video.muted !== this.storedMuted) {
+          video.volume = this.storedVolume;
+          video.muted = this.storedMuted;
+        }
+      };
+      
+      // Слушаем первые несколько изменений громкости для борьбы с Instagram
+      let volumeChangeCount = 0;
+      const tempListener = () => {
+        volumeChangeCount++;
+        if (volumeChangeCount <= 5) {
+          video.volume = this.storedVolume;
+          video.muted = this.storedMuted;
+        } else {
+          video.removeEventListener('volumechange', tempListener);
+        }
+      };
+      
+      video.addEventListener('volumechange', tempListener);
+      video.addEventListener('loadedmetadata', listener);
+      video.addEventListener('play', listener);
+      this.videoVolumeListeners.set(video, listener);
     }
   }
 
@@ -48,7 +124,9 @@ class ReelsMaster {
       if (currentUrl !== lastUrl) {
         lastUrl = currentUrl;
         console.log('Reels Master: URL changed to', currentUrl);
-        setTimeout(() => this.checkForReels(), 500);
+        // Сразу применяем громкость ко всем видео
+        this.applyVolumeToAllVideos();
+        setTimeout(() => this.checkForReels(), 300);
       }
     }).observe(document.querySelector('body')!, { 
       subtree: true, 
@@ -80,6 +158,10 @@ class ReelsMaster {
 
     console.log('Reels Master: Found new video element');
     this.currentVideo = video;
+    
+    // Убедимся что громкость применена к текущему видео
+    this.applyVolumeToVideo(video);
+    
     this.injectControls();
   }
 
@@ -110,14 +192,23 @@ class ReelsMaster {
   private injectControls(): void {
     if (!this.currentVideo) return;
 
-    const actionButtons = this.findActionButtonsContainer();
+    // Ищем контейнер кнопок рядом с ТЕКУЩИМ видео, а не глобально
+    const actionButtons = this.findActionButtonsContainer(this.currentVideo);
     if (!actionButtons) {
       console.log('Reels Master: Action buttons container not found');
-      setTimeout(() => this.injectControls(), 1000);
+      setTimeout(() => this.injectControls(), 500);
       return;
     }
 
-    if (this.controls.container) {
+    // Проверяем, есть ли уже наши контролы в этом контейнере
+    const existingControls = actionButtons.querySelector('.reels-master-controls');
+    if (existingControls) {
+      console.log('Reels Master: Controls already exist in this container');
+      return;
+    }
+
+    // Удаляем старые контролы из предыдущего контейнера
+    if (this.controls.container && this.controls.container.parentElement !== actionButtons) {
       this.controls.container.remove();
     }
 
@@ -128,21 +219,40 @@ class ReelsMaster {
     this.controls.container.appendChild(this.controls.downloadButton);
     actionButtons.insertBefore(this.controls.container, actionButtons.firstChild);
 
-    if (this.storedVolume !== null && this.currentVideo) {
-      this.currentVideo.volume = this.storedVolume;
-    }
-    if (this.currentVideo) {
-      this.currentVideo.muted = this.storedMuted;
+    // Синхронизируем слайдер с текущей громкостью
+    if (this.controls.volumeSlider) {
+      this.controls.volumeSlider.value = String(this.storedVolume * 100);
     }
 
     console.log('Reels Master: Controls injected');
   }
 
-  private findActionButtonsContainer(): HTMLElement | null {
-    const likeButton = document.querySelector('svg[aria-label="Like"]');
+  // Ищем контейнер кнопок относительно конкретного видео
+  private findActionButtonsContainer(video: HTMLVideoElement): HTMLElement | null {
+    // Ищем родительский контейнер рила для данного видео
+    let reelContainer = video.closest('article') || video.closest('[role="presentation"]');
+    
+    if (!reelContainer) {
+      // Пробуем найти родителя вверх по дереву
+      let parent = video.parentElement;
+      for (let i = 0; i < 10 && parent; i++) {
+        if (parent.querySelector('svg[aria-label="Like"]')) {
+          reelContainer = parent;
+          break;
+        }
+        parent = parent.parentElement;
+      }
+    }
+
+    if (!reelContainer) {
+      reelContainer = document.body;
+    }
+
+    // Ищем кнопку лайка внутри контейнера текущего рила
+    const likeButton = reelContainer.querySelector('svg[aria-label="Like"]');
     if (likeButton) {
       let parent = likeButton.parentElement;
-      while (parent) {
+      while (parent && parent !== reelContainer) {
         const childDivs = parent.querySelectorAll(':scope > div');
         if (childDivs.length >= 3) {
           const hasLike = parent.querySelector('svg[aria-label="Like"]');
@@ -186,11 +296,13 @@ class ReelsMaster {
     
     volumeButton.onclick = () => {
       if (this.currentVideo) {
-        this.currentVideo.muted = !this.currentVideo.muted;
-        this.storedMuted = this.currentVideo.muted;
+        this.storedMuted = !this.storedMuted;
+        
+        // Применяем ко всем видео
+        this.applyVolumeToAllVideos();
 
         if (this.controls.volumeSlider) {
-          this.controls.volumeSlider.value = this.currentVideo.muted ? '0' : String(this.currentVideo.volume * 100);
+          this.controls.volumeSlider.value = this.storedMuted ? '0' : String(this.storedVolume * 100);
         }
         this.updateVolumeIcon(volumeButton);
       }
@@ -208,26 +320,23 @@ class ReelsMaster {
     slider.min = '0';
     slider.max = '100';
     
-    let initialValue = '50';
-    if (this.currentVideo) {
-      if (this.currentVideo.muted) {
-        initialValue = '0';
-      } else {
-        initialValue = String(this.currentVideo.volume * 100);
-      }
-    }
-    slider.value = initialValue;
+    // Используем сохраненную громкость
+    slider.value = String(this.storedVolume * 100);
     
     slider.className = 'reels-master-volume-slider';
 
     slider.oninput = (e) => {
       if (this.currentVideo) {
         const value = parseInt((e.target as HTMLInputElement).value);
-        this.currentVideo.volume = value / 100;
-        this.currentVideo.muted = value === 0;
+        const newVolume = value / 100;
+        const newMuted = value === 0;
         
-        this.storedVolume = this.currentVideo.volume;
-        this.storedMuted = this.currentVideo.muted;
+        // Сохраняем настройки
+        this.storedVolume = newVolume;
+        this.storedMuted = newMuted;
+        
+        // Применяем ко всем видео сразу
+        this.applyVolumeToAllVideos();
         
         const volumeControl = slider.closest('.reels-master-volume');
         const volumeButton = volumeControl?.querySelector('.reels-master-volume-button') as HTMLButtonElement;
@@ -241,9 +350,7 @@ class ReelsMaster {
   }
 
   private updateVolumeIcon(button: HTMLButtonElement): void {
-    if (!this.currentVideo) return;
-
-    const volume = this.currentVideo.muted ? 0 : this.currentVideo.volume;
+    const volume = this.storedMuted ? 0 : this.storedVolume;
     
     let icon = '';
     if (volume === 0) {
