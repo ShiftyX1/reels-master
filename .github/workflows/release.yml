@@ -1,0 +1,74 @@
+name: Build and Release Extension
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 8
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Extract version from tag
+        id: version
+        run: |
+          # Remove 'v' prefix from tag (v1.0.0 -> 1.0.0)
+          VERSION=${GITHUB_REF_NAME#v}
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          echo "Extracted version: $VERSION"
+
+      - name: Update manifest version
+        run: |
+          # Update version in manifest.json
+          sed -i 's/"version": "[^"]*"/"version": "${{ steps.version.outputs.VERSION }}"/' src/manifest.json
+          echo "Updated manifest.json:"
+          cat src/manifest.json
+
+      - name: Build extension
+        run: pnpm build
+
+      - name: Create release zip
+        run: |
+          # Create "Reels Master" directory with dist contents
+          mkdir -p "release/Reels Master"
+          cp -r dist/* "release/Reels Master/"
+          
+          # Create zip file
+          cd release
+          zip -r ../ReelsMaster.zip "Reels Master"
+          cd ..
+          
+          # Show zip contents
+          echo "Zip contents:"
+          unzip -l ReelsMaster.zip
+
+      - name: Create Release Draft
+        uses: softprops/action-gh-release@v1
+        with:
+          draft: true
+          name: Reels Master v${{ steps.version.outputs.VERSION }}
+          tag_name: ${{ github.ref_name }}
+          files: ReelsMaster.zip
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
