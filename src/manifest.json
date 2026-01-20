@@ -6,6 +6,8 @@
     "background": {
       "service_worker": "background/background.js"
     },
+    "homepage_url": "https://shiftyspace.ru",
+    "author": "ShiftyX1",
     "content_scripts": [
       {
         "matches": ["*://*.instagram.com/*"],
