@@ -1,8 +1,8 @@
 {
     "manifest_version": 3,
     "name": "Reels Master",
-    "version": "1.0.0",
-    "description": "Instagram Reels volume control and download",
+    "version": "1.1.0",
+    "description": "Enhance your Instagram experience with Reels Master - download reels, seek through videos, and more!",
     "background": {
       "service_worker": "background/background.js"
     },
