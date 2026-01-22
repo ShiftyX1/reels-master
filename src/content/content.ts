@@ -218,6 +218,17 @@ class ReelsMaster {
     'フォローする',
     '关注',
   ];
+
+  private readonly AVATAR_SELECTORS = [
+    'img[alt*="profile picture"]',
+    'img[alt*="Фото профиля"]',
+    'img[alt*="фото профиля"]',
+    'img[alt*="Foto de perfil"]',
+    'img[alt*="Photo de profil"]',
+    'img[alt*="Profilbild"]',
+    'img[alt*="プロフィール写真"]',
+    'img[alt*="头像"]',
+  ].join(',');
     
   private findAllActionContainers(): HTMLElement[] {
     const containers: HTMLElement[] = [];
@@ -508,7 +519,7 @@ class ReelsMaster {
         const maxDepth = 15;
         
         while (parent && depth < maxDepth) {
-          const hasAvatar = parent.querySelector('img[alt*="profile picture"]');
+          const hasAvatar = parent.querySelector(this.AVATAR_SELECTORS);
           const hasFollow = parent.querySelector('[role="button"]');
           
           if (hasAvatar && hasFollow && parent.children.length >= 2) {
