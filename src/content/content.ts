@@ -8,6 +8,8 @@ class ReelsMaster {
   private processedContainers: WeakSet<HTMLElement> = new WeakSet();
   private videoVolumeListeners: WeakMap<HTMLVideoElement, boolean> = new WeakMap();
   private domObserver: MutationObserver | null = null;
+  private processedOverlays: WeakSet<HTMLElement> = new WeakSet();
+  private videoSeekingListeners: WeakMap<HTMLVideoElement, Set<HTMLInputElement>> = new WeakMap();
 
   constructor() {
     this.init();
@@ -52,6 +54,7 @@ class ReelsMaster {
   private start(): void {
     console.log('Reels Master: Starting...');
     this.injectControlsToAllContainers();
+    this.injectSeekingToAllOverlays();
     this.setupDOMObserver();
   }
 
@@ -133,6 +136,7 @@ class ReelsMaster {
       if (shouldCheck) {
         requestAnimationFrame(() => {
           this.injectControlsToAllContainers();
+          this.injectSeekingToAllOverlays();
         });
       }
     });
@@ -460,6 +464,181 @@ class ReelsMaster {
       `;
     }
   }
-}
+  private injectSeekingToAllOverlays(): void {
+    if (!window.location.pathname.includes('/reels/')) return;
+
+    const overlayContainers = this.findAllOverlayContainers();
+    console.log(`Reels Master: Found ${overlayContainers.length} overlay containers`);
+
+    for (const container of overlayContainers) {
+      this.injectSeekingToOverlay(container);
+    }
+  }
+
+  private findAllOverlayContainers(): HTMLElement[] {
+    const containers: HTMLElement[] = [];
+    
+    const followButtons = document.querySelectorAll('[role="button"]');
+    
+    for (const button of followButtons) {
+      if (button.textContent?.trim() === 'Follow') {
+        let parent = button.parentElement;
+        let depth = 0;
+        const maxDepth = 15;
+        
+        while (parent && depth < maxDepth) {
+          const hasAvatar = parent.querySelector('img[alt*="profile picture"]');
+          const hasFollow = parent.querySelector('[role="button"]');
+          
+          if (hasAvatar && hasFollow && parent.children.length >= 2) {
+            if (!containers.includes(parent as HTMLElement)) {
+              containers.push(parent as HTMLElement);
+            }
+            break;
+          }
+          
+          parent = parent.parentElement;
+          depth++;
+        }
+      }
+    }
+    
+    return containers;
+  }
+
+  private injectSeekingToOverlay(overlayContainer: HTMLElement): void {
+    if (this.processedOverlays.has(overlayContainer)) {
+      return;
+    }
+
+    if (overlayContainer.querySelector('.reels-master-seeking')) {
+      this.processedOverlays.add(overlayContainer);
+      return;
+    }
+
+    const video = this.findVideoForOverlay(overlayContainer);
+    if (!video) {
+      console.log('Reels Master: Video not found for overlay');
+      return;
+    }
+
+    const seekingControl = this.createSeekingControl(video);
+    overlayContainer.appendChild(seekingControl);
+    
+    this.processedOverlays.add(overlayContainer);
+    console.log('Reels Master: Seeking control injected to overlay');
+  }
+
+  private findVideoForOverlay(overlayContainer: HTMLElement): HTMLVideoElement | null {
+    let parent = overlayContainer.parentElement;
+    
+    while (parent) {
+      const video = parent.querySelector('video');
+      if (video) {
+        return video;
+      }
+      parent = parent.parentElement;
+      
+      if (parent === document.body) break;
+    }
+    
+    return this.getClosestVideoToElement(overlayContainer);
+  }
+
+  private createSeekingControl(video: HTMLVideoElement): HTMLDivElement {
+    const seekingContainer = document.createElement('div');
+    seekingContainer.className = 'reels-master-seeking';
+
+    seekingContainer.addEventListener('click', (e) => {
+      e.stopPropagation();
+    });
+    seekingContainer.addEventListener('mousedown', (e) => {
+      e.stopPropagation();
+    });
+    seekingContainer.addEventListener('touchstart', (e) => {
+      e.stopPropagation();
+    });
+
+    const timeDisplay = document.createElement('div');
+    timeDisplay.className = 'reels-master-time-display';
+    
+    const currentTimeSpan = document.createElement('span');
+    currentTimeSpan.textContent = '0:00';
+    
+    const durationSpan = document.createElement('span');
+    durationSpan.textContent = '0:00';
+    
+    timeDisplay.appendChild(currentTimeSpan);
+    timeDisplay.appendChild(durationSpan);
+
+    const slider = document.createElement('input');
+    slider.type = 'range';
+    slider.min = '0';
+    slider.max = '100';
+    slider.value = '0';
+    slider.className = 'reels-master-seeking-slider';
+
+    slider.addEventListener('click', (e) => e.stopPropagation());
+    slider.addEventListener('mousedown', (e) => e.stopPropagation());
+    slider.addEventListener('mouseup', (e) => e.stopPropagation());
+    slider.addEventListener('touchstart', (e) => e.stopPropagation());
+    slider.addEventListener('touchend', (e) => e.stopPropagation());
+    slider.addEventListener('touchmove', (e) => e.stopPropagation());
+
+    const updateDuration = () => {
+      if (video.duration && !isNaN(video.duration) && video.duration !== Infinity) {
+        slider.max = String(video.duration);
+        durationSpan.textContent = this.formatTime(video.duration);
+      }
+    };
+
+    const updateTime = () => {
+      if (!isNaN(video.duration) && video.duration !== Infinity) {
+        slider.value = String(video.currentTime);
+        currentTimeSpan.textContent = this.formatTime(video.currentTime);
+      }
+    };
+
+    video.addEventListener('loadedmetadata', updateDuration);
+    video.addEventListener('durationchange', updateDuration);
+    video.addEventListener('timeupdate', updateTime);
+
+    updateDuration();
+    updateTime();
+
+    let isSeeking = false;
+    
+    slider.addEventListener('input', (e) => {
+      const time = parseFloat((e.target as HTMLInputElement).value);
+      currentTimeSpan.textContent = this.formatTime(time);
+      isSeeking = true;
+    });
+
+    slider.addEventListener('change', (e) => {
+      const time = parseFloat((e.target as HTMLInputElement).value);
+      video.currentTime = time;
+      isSeeking = false;
+    });
+
+    if (!this.videoSeekingListeners.has(video)) {
+      this.videoSeekingListeners.set(video, new Set());
+    }
+    this.videoSeekingListeners.get(video)!.add(slider);
+
+    seekingContainer.appendChild(timeDisplay);
+    seekingContainer.appendChild(slider);
+
+    return seekingContainer;
+  }
+
+  private formatTime(seconds: number): string {
+    if (isNaN(seconds) || seconds === Infinity) {
+      return '0:00';
+    }
+    
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  }}
 
 new ReelsMaster();

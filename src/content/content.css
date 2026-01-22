@@ -207,3 +207,77 @@
 .reels-master-spinner {
   animation: spin 1s linear infinite;
 }
+
+/* Seeking Control - для overlay контейнера */
+.reels-master-seeking {
+  width: 100%;
+  padding: 8px 16px 12px 16px;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.4), transparent);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  pointer-events: auto;
+  cursor: default;
+}
+
+.reels-master-seeking-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 3px;
+  background: rgba(255, 255, 255, 0.3);
+  outline: none;
+  border-radius: 2px;
+  cursor: pointer;
+  position: relative;
+  pointer-events: auto;
+  touch-action: none;
+}
+
+.reels-master-seeking-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  background: white;
+  cursor: pointer;
+  border-radius: 50%;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+  transition: all 0.2s;
+}
+
+.reels-master-seeking-slider::-webkit-slider-thumb:hover {
+  background: #f0f0f0;
+  transform: scale(1.3);
+  box-shadow: 0 3px 6px rgba(0, 0, 0, 0.6);
+}
+
+.reels-master-seeking-slider::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  background: white;
+  cursor: pointer;
+  border-radius: 50%;
+  border: none;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+  transition: all 0.2s;
+}
+
+.reels-master-seeking-slider::-moz-range-thumb:hover {
+  background: #f0f0f0;
+  transform: scale(1.3);
+  box-shadow: 0 3px 6px rgba(0, 0, 0, 0.6);
+}
+
+.reels-master-time-display {
+  display: flex;
+  justify-content: space-between;
+  color: white;
+  font-size: 11px;
+  font-weight: 500;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+  user-select: none;
+  opacity: 0.9;
+  pointer-events: none;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
