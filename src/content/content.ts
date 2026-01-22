@@ -198,6 +198,26 @@ class ReelsMaster {
     'svg[aria-label="Speichern"]',
     'svg[aria-label="保存"]',
   ].join(',');
+
+  private readonly FOLLOW_TEXTS = [
+    'Follow',
+    'Подписаться',
+    'Seguir',
+    'Suivre',
+    'Folgen',
+    'Following',
+    'Подписки',
+    'Siguiendo',
+    'Abonné(e)',
+    'Gefolgt',
+    'Requested',
+    'Запрос отправлен',
+    'Solicitado',
+    'Demandé',
+    'Anfrage gesendet',
+    'フォローする',
+    '关注',
+  ];
     
   private findAllActionContainers(): HTMLElement[] {
     const containers: HTMLElement[] = [];
@@ -481,7 +501,8 @@ class ReelsMaster {
     const followButtons = document.querySelectorAll('[role="button"]');
     
     for (const button of followButtons) {
-      if (button.textContent?.trim() === 'Follow') {
+      const text = button.textContent?.trim();
+      if (text && this.FOLLOW_TEXTS.includes(text)) {
         let parent = button.parentElement;
         let depth = 0;
         const maxDepth = 15;

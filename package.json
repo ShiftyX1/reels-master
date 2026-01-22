@@ -1,6 +1,6 @@
 {
   "name": "reels-master",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Chrome extension for Instagram Reels with volume control and download functionality",
   "main": "index.js",
   "scripts": {
