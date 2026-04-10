@@ -3,6 +3,8 @@ import { resolve } from 'path';
 import { copyFileSync, existsSync } from 'fs';
 import AdmZip from 'adm-zip';
 
+const browser = process.env.BROWSER || 'chrome';
+
 export default defineConfig({
   build: {
     outDir: 'dist',
@@ -25,10 +27,10 @@ export default defineConfig({
       closeBundle() {
         try {
           copyFileSync(
-            resolve(__dirname, 'src/manifest.json'),
+            resolve(__dirname, `src/manifest.${browser}.json`),
             resolve(__dirname, 'dist/manifest.json')
           );
-          console.log('✓ Copied manifest.json');
+          console.log(`✓ Copied manifest.${browser}.json`);
         } catch (err) {
           console.error('Error copying manifest.json:', err);
         }
@@ -44,8 +46,8 @@ export default defineConfig({
             
             if (existsSync(distPath)) {
               zip.addLocalFolder(distPath);
-              zip.writeZip(resolve(__dirname, 'reels-master.zip'));
-              console.log('Created reels-master.zip');
+              zip.writeZip(resolve(__dirname, `reels-master-${browser}.zip`));
+              console.log(`Created reels-master-${browser}.zip`);
             }
           } catch (err) {
             console.error('Error creating zip:', err);

@@ -4,8 +4,11 @@
   "description": "Chrome extension for Instagram Reels with volume control and download functionality",
   "main": "index.js",
   "scripts": {
-    "dev": "vite build --watch",
-    "build": "vite build",
+    "dev": "BROWSER=chrome vite build --watch",
+    "dev:firefox": "BROWSER=firefox vite build --watch",
+    "build": "pnpm build:chrome && pnpm build:firefox",
+    "build:chrome": "BROWSER=chrome vite build",
+    "build:firefox": "BROWSER=firefox vite build",
     "bundle": "vite build && node scripts/bundle.js",
     "type-check": "tsc --noEmit"
   },
