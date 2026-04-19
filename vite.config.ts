@@ -5,15 +5,27 @@ import AdmZip from 'adm-zip';
 
 const browser = process.env.BROWSER || 'chrome';
 
+const buildEntry = process.env.BUILD_ENTRY; // 'background' | 'content' | undefined (both)
+
+const inputs =
+  buildEntry === 'background'
+    ? { background: resolve(__dirname, 'src/background/service-worker.ts') }
+    : buildEntry === 'content'
+    ? { content: resolve(__dirname, 'src/content/content.ts') }
+    : {
+        background: resolve(__dirname, 'src/background/service-worker.ts'),
+        content: resolve(__dirname, 'src/content/content.ts'),
+      };
+
+const shouldEmptyOutDir = buildEntry !== 'content';
+const isFinalPass = buildEntry !== 'background';
+
 export default defineConfig({
   build: {
     outDir: 'dist',
-    emptyOutDir: true,
+    emptyOutDir: shouldEmptyOutDir,
     rollupOptions: {
-      input: {
-        background: resolve(__dirname, 'src/background/service-worker.ts'),
-        content: resolve(__dirname, 'src/content/content.ts'),
-      },
+      input: inputs,
       output: {
         entryFileNames: '[name]/[name].js',
         chunkFileNames: '[name].js',
@@ -25,6 +37,7 @@ export default defineConfig({
     {
       name: 'copy-manifest',
       closeBundle() {
+        if (!isFinalPass) return;
         try {
           copyFileSync(
             resolve(__dirname, `src/manifest.${browser}.json`),
@@ -39,6 +52,7 @@ export default defineConfig({
     {
       name: 'create-zip',
       closeBundle() {
+        if (!isFinalPass) return;
         if (process.env.NODE_ENV === 'production' || !process.argv.includes('--watch')) {
           try {
             const zip = new AdmZip();

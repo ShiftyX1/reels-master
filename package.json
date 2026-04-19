@@ -1,14 +1,14 @@
 {
   "name": "reels-master",
-  "version": "1.1.2",
+  "version": "1.2.1",
   "description": "Chrome extension for Instagram Reels with volume control and download functionality",
   "main": "index.js",
   "scripts": {
-    "dev": "BROWSER=chrome vite build --watch",
-    "dev:firefox": "BROWSER=firefox vite build --watch",
+    "dev": "BROWSER=chrome BUILD_ENTRY=background vite build && BROWSER=chrome BUILD_ENTRY=content vite build --watch",
+    "dev:firefox": "BROWSER=firefox BUILD_ENTRY=background vite build && BROWSER=firefox BUILD_ENTRY=content vite build --watch",
     "build": "pnpm build:chrome && pnpm build:firefox",
-    "build:chrome": "BROWSER=chrome vite build",
-    "build:firefox": "BROWSER=firefox vite build",
+    "build:chrome": "BROWSER=chrome BUILD_ENTRY=background vite build && BROWSER=chrome BUILD_ENTRY=content vite build",
+    "build:firefox": "BROWSER=firefox BUILD_ENTRY=background vite build && BROWSER=firefox BUILD_ENTRY=content vite build",
     "bundle": "vite build && node scripts/bundle.js",
     "type-check": "tsc --noEmit"
   },
