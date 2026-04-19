@@ -1,4 +1,5 @@
 import './content.css';
+import browser from 'webextension-polyfill';
 
 console.log('Reels Master: Content script loaded');
 
@@ -27,28 +28,23 @@ class ReelsMaster {
     }
   }
 
-  private loadSettings(): void {
-    if (typeof chrome !== 'undefined' && chrome.storage?.local) {
-      chrome.storage.local.get(['volume', 'muted'], (result) => {
-        if (result.volume !== undefined) {
-          this.storedVolume = result.volume;
-        }
-        if (result.muted !== undefined) {
-          this.storedMuted = result.muted;
-        }
-        this.applyVolumeToAllVideos();
-        this.updateAllSliders();
-      });
+  private async loadSettings(): Promise<void> {
+    const result = await browser.storage.local.get(['volume', 'muted']);
+    if (result.volume !== undefined) {
+      this.storedVolume = result.volume as number;
     }
+    if (result.muted !== undefined) {
+      this.storedMuted = result.muted as boolean;
+    }
+    this.applyVolumeToAllVideos();
+    this.updateAllSliders();
   }
 
   private saveSettings(): void {
-    if (typeof chrome !== 'undefined' && chrome.storage?.local) {
-      chrome.storage.local.set({
-        volume: this.storedVolume,
-        muted: this.storedMuted
-      });
-    }
+    browser.storage.local.set({
+      volume: this.storedVolume,
+      muted: this.storedMuted
+    });
   }
 
   private start(): void {
@@ -459,10 +455,10 @@ class ReelsMaster {
 
       console.log('Reels Master: Sending download request to background for', reelUrl);
 
-      const response = await chrome.runtime.sendMessage({
+      const response = await browser.runtime.sendMessage({
         type: 'DOWNLOAD_REEL',
         url: reelUrl
-      });
+      }) as { success: boolean; error?: string };
 
       console.log('Reels Master: Background response', response);
 

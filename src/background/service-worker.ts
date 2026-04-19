@@ -1,4 +1,6 @@
 // Background Service Worker for Reels Master
+import browser from 'webextension-polyfill';
+
 console.log('Reels Master: Background service worker loaded');
 
 const ENCODING_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
@@ -19,16 +21,14 @@ function extractShortcode(url: string): string | null {
   return match ? match[1] : null;
 }
 
-chrome.runtime.onInstalled.addListener(() => {
+browser.runtime.onInstalled.addListener(() => {
   console.log('Reels Master: Extension installed');
 });
 
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message.type === 'DOWNLOAD_REEL') {
-    handleDownload(message.url)
-      .then(result => sendResponse(result))
-      .catch(error => sendResponse({ success: false, error: error.message }));
-    return true;
+browser.runtime.onMessage.addListener((message: unknown) => {
+  const msg = message as { type: string; url: string };
+  if (msg.type === 'DOWNLOAD_REEL') {
+    return handleDownload(msg.url);
   }
 });
 
@@ -79,7 +79,7 @@ async function handleDownload(reelUrl: string): Promise<{ success: boolean; down
 
     console.log('Reels Master: Found video URL, starting download');
 
-    await chrome.downloads.download({
+    await browser.downloads.download({
       url: videoUrl,
       filename: `reel_${shortcode}_${Date.now()}.mp4`,
     });
@@ -132,7 +132,7 @@ async function tryGraphQLFallback(shortcode: string, headers: Record<string, str
       return { success: false, error: 'No video URL found in response' };
     }
 
-    await chrome.downloads.download({
+    await browser.downloads.download({
       url: videoUrl,
       filename: `reel_${shortcode}_${Date.now()}.mp4`,
     });
