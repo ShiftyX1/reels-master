@@ -1,59 +1,75 @@
 # Reels Master
 
-Chrome расширение для улучшенного просмотра Instagram Reels с управлением громкостью и загрузкой видео.
+A browser extension for enhanced Instagram Reels experience with volume control, video downloading, and seeking.
 
-## Возможности
+## Features
 
-- **Управление громкостью** - Вертикальный слайдер для точной настройки громкости видео
-- **Загрузка роликов** - Скачивайте рилсы одним кликом
-- **Перемотка видео** - Используйте слайдер для перемотки рилса, если пропустили интересный момент, больше не придется пересматривать всё видео!
+- **Volume control** — Vertical slider for precise video volume adjustment
+- **Download reels** — Save reels to your device with a single click
+- **Video seeking** — Scrub through a reel with a progress bar — no need to rewatch from the beginning if you missed something
 
-## Установка
+## Installation
 
-### Использование готового расширения
+### Chrome
 
-1. Скачайте последнюю версию расширения из [релизов на GitHub](https://github.com/ShiftyX1/reels-master/releases)
-2. Распакуйте архив в удобное место на вашем компьютере
-3. Откройте Chrome и перейдите на страницу расширений: `chrome://extensions/`
-4. Включите "Режим разработчика" (Developer mode) в правом верхнем углу
-5. Нажмите "Загрузить распакованное расширение" (Load unpacked)
-6. Выберите папку `Reels Master` из распакованного архива
+1. Download the latest `reels-master-chrome.zip` from [GitHub Releases](https://github.com/ShiftyX1/reels-master/releases)
+2. Unzip the archive
+3. Open Chrome and go to `chrome://extensions/`
+4. Enable **Developer mode** in the top-right corner
+5. Click **Load unpacked** and select the unzipped folder
 
-### Разработка
+### Firefox
+
+1. Download the latest `reels-master-firefox.zip` from [GitHub Releases](https://github.com/ShiftyX1/reels-master/releases)
+2. Open Firefox and go to `about:addons`
+3. Click the gear icon → **Install Add-on From File...**
+4. Select the downloaded `.zip` file
 
 > [!NOTE]
-> В будущем будет выложено в Chrome Web Store. Пока что установка только вручную.
+> The extension will be published to the Chrome Web Store and Firefox Add-ons (AMO) in the future. Manual installation only for now.
 
-1. Установите зависимости:
+## Development
+
+1. Install dependencies:
 ```bash
 pnpm install
 ```
 
-2. Соберите расширение:
+2. Build the extension:
 ```bash
-pnpm run build
+# Both browsers
+pnpm build
+
+# Chrome only
+pnpm build:chrome
+
+# Firefox only
+pnpm build:firefox
 ```
 
-3. Загрузите расширение в Chrome:
-   - Откройте `chrome://extensions/`
-   - Включите "Режим разработчика" (Developer mode)
-   - Нажмите "Загрузить распакованное расширение" (Load unpacked)
-   - Выберите папку `dist`
+3. Load in browser:
+   - **Chrome:** open `chrome://extensions/`, enable Developer mode, click **Load unpacked**, select the `dist/` folder
+   - **Firefox:** open `about:debugging#/runtime/this-firefox`, click **Load Temporary Add-on**, select any file inside `dist/`
 
-### Режим разработки с hot-reload
+### Watch mode
 
 ```bash
-pnpm run dev
+# Chrome
+pnpm dev
+
+# Firefox
+pnpm dev:firefox
 ```
 
-## Использование
+## Usage
 
-1. Откройте Instagram и перейдите к любому рилсу
-2. Справа от видео, рядом с кнопками лайка и комментариев, появятся новые элементы управления:
-   - **Кнопка громкости** - Нажмите для включения/выключения звука
-   - **Слайдер громкости** - Перетащите для регулировки уровня громкости (0-100%)
-   - **Кнопка загрузки** - Нажмите для скачивания текущего рилса
+1. Open Instagram and navigate to any reel
+2. New controls will appear next to the like and comment buttons:
+   - **Mute button** — toggle audio on/off
+   - **Volume slider** — drag to adjust volume (0–100%)
+   - **Download button** — click to save the current reel
+3. A **progress bar** with current time and duration is shown in the video overlay for seeking
 
-## Лицензия
+## License
 
-ISC
+MIT
