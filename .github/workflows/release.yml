@@ -24,7 +24,7 @@ jobs:
       - name: Install pnpm
         uses: pnpm/action-setup@v2
         with:
-          version: 8
+          version: 10
 
       - name: Install dependencies
         run: pnpm install
@@ -39,28 +39,19 @@ jobs:
 
       - name: Update manifest version
         run: |
-          # Update version in manifest.json
-          sed -i 's/"version": "[^"]*"/"version": "${{ steps.version.outputs.VERSION }}"/' src/manifest.json
-          echo "Updated manifest.json:"
-          cat src/manifest.json
+          VERSION=${{ steps.version.outputs.VERSION }}
+          sed -i "s/\"version\": \"[^\"]*\"/\"version\": \"$VERSION\"/" src/manifest.chrome.json
+          sed -i "s/\"version\": \"[^\"]*\"/\"version\": \"$VERSION\"/" src/manifest.firefox.json
+          echo "Updated manifest.chrome.json:"
+          cat src/manifest.chrome.json
+          echo "Updated manifest.firefox.json:"
+          cat src/manifest.firefox.json
 
-      - name: Build extension
-        run: pnpm build
+      - name: Build Chrome extension
+        run: pnpm build:chrome
 
-      - name: Create release zip
-        run: |
-          # Create "Reels Master" directory with dist contents
-          mkdir -p "release/Reels Master"
-          cp -r dist/* "release/Reels Master/"
-          
-          # Create zip file
-          cd release
-          zip -r ../ReelsMaster.zip "Reels Master"
-          cd ..
-          
-          # Show zip contents
-          echo "Zip contents:"
-          unzip -l ReelsMaster.zip
+      - name: Build Firefox extension
+        run: pnpm build:firefox
 
       - name: Create Release Draft
         uses: softprops/action-gh-release@v1
@@ -68,7 +59,9 @@ jobs:
           draft: true
           name: Reels Master v${{ steps.version.outputs.VERSION }}
           tag_name: ${{ github.ref_name }}
-          files: ReelsMaster.zip
+          files: |
+            reels-master-chrome.zip
+            reels-master-firefox.zip
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
